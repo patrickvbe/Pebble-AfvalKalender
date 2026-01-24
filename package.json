@@ -1,0 +1,45 @@
+{
+  "name": "AfvalKalender",
+  "author": "Patrick van Beem <patrick@vanbeem.info>",
+  "version": "0.8.0",
+  "keywords": ["AfvalKalender", "Avri"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Afval Kalender",
+    "uuid": "0d215356-a868-4aa1-a384-db16ffbe091c",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "watchapp": {
+      "watchface": false
+    },
+    "messageKeys": [
+      "JSReady",
+      "RequestData",
+      "patrick",
+      "HouseLetter",
+      "HouseLetter",
+      "CompanyCode",
+      "Community",
+      "UniqueAddressID"
+    ],
+    "resources": {
+      "media": [
+        {
+          "menuIcon": true,
+          "type": "png",
+          "name": "APP_ICON",
+          "file": "app_icon.png"
+        }
+      ]
+    }
+  }
+}

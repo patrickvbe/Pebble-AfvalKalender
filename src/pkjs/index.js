@@ -101,22 +101,25 @@ function requestData(dateint) {
           for ( const datestr of pickup.pickupDates ) {
             // Convert date + type to a decimal encoded uint32
             var date = new Date(datestr)
-            result.push(date.getFullYear()*1000000 + (date.getMonth()+1) * 10000 + date.getDate() * 100 + pickuptype)
+            result.push(Math.floor(date.getTime()/1000) * 100 + pickuptype)
           }
         }
-        if ( result.length > 32 ) break;  // Sanity check...
+        if ( result.length > 100 ) break;  // Sanity check...
       }
     } catch(error) {
       console.log(error)
     }
     // Convert result to binary to send to the watch
-    const buffer = new ArrayBuffer(result.length * 4)
-    const data = new Uint32Array(buffer)
+    result.sort()
+    entry_count = Math.min(32, result.length)
+    const buffer = new ArrayBuffer(entry_count * 8)
+    const data = new BigUint64Array(buffer)
     var idx = 0
     for ( const code of result ) {
-      data[idx++] = code
+      data[idx++] = BigInt(code)
+      if ( idx >= entry_count ) break;  // Max for the watch, limited after sorting.
     }
-    Pebble.sendAppMessage({Stroom: Array.from(new Uint8Array(buffer))});
+    Pebble.sendAppMessage({Entries: Array.from(new Uint8Array(buffer))});
   } else {
     console.log("Request failed: {0}: {1}".f(req.status, req.statusText));
   }

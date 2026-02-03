@@ -38,7 +38,7 @@ void request_entries() {
   DictionaryIterator *out_iter;
   AppMessageResult result = app_message_outbox_begin(&out_iter);
   if(result == APP_MSG_OK) {
-    dict_write_int(out_iter, MESSAGE_KEY_RequestData, NULL, 0, true);
+    dict_write_uint8(out_iter, MESSAGE_KEY_RequestData, 0);
     result = app_message_outbox_send();
     if(result != APP_MSG_OK) {
       APP_LOG(APP_LOG_LEVEL_ERROR, "Error sending the outbox: %d", (int)result);
@@ -50,8 +50,7 @@ void request_entries() {
 }
 
 void update_entries_received(Tuple* tuple) {
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Tariffs received");
-  
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Entries received");
   const uint16_t buf_size = MIN(tuple->length, sizeof(s_entries));
   s_num_entries = buf_size / sizeof(uint64_t);
   memcpy(&s_entries, tuple->value->data, buf_size);
@@ -79,17 +78,24 @@ static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   }
 }
 
-uint16_t menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_context) { return 1; }
-uint16_t menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context) { return s_num_entries; }
+uint16_t menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_context)
+{
+  return 1;
+}
+uint16_t menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context)
+{
+  return s_num_entries;
+}
 
  void menu_layer_draw_row(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
    char sub_title[50];
    uint64_t entry = s_entries[cell_index->row];
    int entry_type = entry % 100;
    time_t entry_time = entry / 100;
-   struct tm* entry_time_struct = gmtime(entry_time);
+   long tt = (long)entry_time;
+   struct tm* entry_time_struct = gmtime(&entry_time);
    strftime(sub_title, 50, "%a %x", entry_time_struct);
-   menu_cell_basic_draw(ctx, cell_layer, entry_type > 0 && entry_type <= 4 ? s_entry_types[entry_type] : NULL, sub_title, NULL);
+   menu_cell_basic_draw(ctx, cell_layer, entry_type > 0 && entry_type <= 4 ? s_entry_types[entry_type-1] : NULL, sub_title, NULL);
  }
 
 MenuLayerCallbacks menu_layer_callbacks = {
@@ -113,6 +119,7 @@ static void prv_window_load(Window *window) {
   GRect bounds = layer_get_bounds(window_layer);
 
   s_menu_layer = menu_layer_create(bounds);
+  menu_layer_set_click_config_onto_window(s_menu_layer, window);
   menu_layer_set_callbacks(s_menu_layer, NULL, menu_layer_callbacks);
   layer_add_child(window_layer, menu_layer_get_layer(s_menu_layer));
 }
@@ -122,13 +129,21 @@ static void prv_window_unload(Window *window) {
 }
 
 static void prv_init(void) {
+  uint64_t inits[] = {177007320004, 177085080002, 177093720001, 177102360003, 177188760004, 177206040002, 177327000002, 177335640001, 177344280003, 177370200004, 177447960002, 177551280004, 177568560002, 177577200001, 177585840003, 177689520002, 177732720004};
+  s_num_entries = sizeof(inits) / sizeof(uint64_t);
+  memcpy(s_entries, inits, sizeof(inits));
   if ( persist_exists(STORAGE_KEY_ENTRIES) ) {
-    int data_size = MIN(persist_get_size(STORAGE_KEY_ENTRIES), sizeof(s_entries));
+    int data_size = MIN(persist_get_size(STORAGE_KEY_ENTRIES), (int)sizeof(s_entries));
     persist_read_data(STORAGE_KEY_ENTRIES, s_entries, data_size);
     s_num_entries = data_size / sizeof(uint64_t);
   }
 
   s_window = window_create();
+  window_set_window_handlers(s_window, (WindowHandlers) {
+    .load = prv_window_load,
+    .unload = prv_window_unload,
+  });
+  const bool animated = true;
   window_stack_push(s_window, animated);
 
   app_message_register_inbox_received(inbox_received_handler);
@@ -141,7 +156,6 @@ static void prv_deinit(void) {
 
 int main(void) {
   prv_init();
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "Done initializing, pushed window: %p", s_window);
   app_event_loop();
   prv_deinit();
 }

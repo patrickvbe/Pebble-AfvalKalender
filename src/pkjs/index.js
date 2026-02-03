@@ -42,6 +42,9 @@ String.prototype.format = String.prototype.f = function() {
     return s;
 };
 
+var community=""
+var uniqueAddressID=""
+
 function FetchAddress(postCode, houseNumber, houseLetter, companyCode) {
   var req = new XMLHttpRequest();
   
@@ -57,7 +60,6 @@ function FetchAddress(postCode, houseNumber, houseLetter, companyCode) {
       if ( datalist ) {
         uniqueAddressID = datalist.UniqueId
         community = datalist.Community
-        console.log("Succeeded: {0} / {1}".f(uniqueAddressID, community))
       }
     } catch(error) {
       //console.log(error)
@@ -66,67 +68,70 @@ function FetchAddress(postCode, houseNumber, houseLetter, companyCode) {
 }
 
 
-function requestData(dateint) {
-  var postCode="5301PA"
-  var houseNumber="9"
-  var houseLetter=""
-  var companyCode="78cd4156-394b-413d-8936-d407e334559a"
-  var startDate= new Date()
-  var endDate= new Date()
-  endDate.setMonth(endDate.getMonth() + 3) // Get 3 months of data.
-  var community=""
-  var uniqueAddressID=""
+function requestData() {
+  try {
+    console.log('requestData')
+    var postCode="5301PA"
+    var houseNumber="9"
+    var houseLetter=""
+    var companyCode="78cd4156-394b-413d-8936-d407e334559a"
+    var startDate= new Date()
+    var endDate= new Date()
+    endDate.setMonth(endDate.getMonth() + 3) // Get 3 months of data.
 
-  if ( community === "" || uniqueAddressID == "" ) {
-    FetchAddress(postCode, houseNumber, houseLetter, companyCode)
-    console.log("Address fetched: {0} / {1}".f(community, uniqueAddressID));
-  }
+    if ( community === "" || uniqueAddressID == "" ) {
+      FetchAddress(postCode, houseNumber, houseLetter, companyCode)
+      console.log("Address fetched: {0} / {1}".f(community, uniqueAddressID));
+    }
 
-  var req = new XMLHttpRequest();
-  req.open('POST', 'https://wasteapi.ximmio.com/api/GetCalendar' , false)
-  req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
-  req.send('startDate={0}&endDate={1}&community={2}&uniqueAddressID={3}&companyCode={4}'.f(startDate.toISOString().substring(0,10), endDate.toISOString().substring(0,10), community, uniqueAddressID, companyCode))
-  if (req.status === 200) {
-    var result = []
-    try {
-      //console.log(req.responseText)
-      var response = JSON.parse(req.responseText)
-      for ( const pickup of response.dataList ) {
-        var pickuptype = 0;                                 // Unknown
-        if ( pickup.pickupType ==  0 ) pickuptype = 1       // Grijs
-        if ( pickup.pickupType ==  1 ) pickuptype = 2       // Groen
-        if ( pickup.pickupType ==  2 ) pickuptype = 3       // Papier
-        if ( pickup.pickupType == 10 ) pickuptype = 4       // Verpakkingen
-        if ( pickuptype != 0 ) {
-          for ( const datestr of pickup.pickupDates ) {
-            // Convert date + type to a decimal encoded uint32
-            var date = new Date(datestr)
-            result.push(Math.floor(date.getTime()/1000) * 100 + pickuptype)
+    var req = new XMLHttpRequest();
+    req.open('POST', 'https://wasteapi.ximmio.com/api/GetCalendar' , false)
+    req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
+    req.send('startDate={0}&endDate={1}&community={2}&uniqueAddressID={3}&companyCode={4}'.f(startDate.toISOString().substring(0,10), endDate.toISOString().substring(0,10), community, uniqueAddressID, companyCode))
+    if (req.status === 200) {
+      var result = []
+      try {
+        //console.log(req.responseText)
+        var response = JSON.parse(req.responseText)
+        for ( const pickup of response.dataList ) {
+          var pickuptype = 0;                                 // Unknown
+          if ( pickup.pickupType ==  0 ) pickuptype = 1       // Grijs
+          if ( pickup.pickupType ==  1 ) pickuptype = 2       // Groen
+          if ( pickup.pickupType ==  2 ) pickuptype = 3       // Papier
+          if ( pickup.pickupType == 10 ) pickuptype = 4       // Verpakkingen
+          if ( pickuptype != 0 ) {
+            for ( const datestr of pickup.pickupDates ) {
+              // Convert date + type to a decimal encoded uint32
+              var date = new Date(datestr)
+              result.push(Math.floor(date.getTime()/1000) * 100 + pickuptype)
+            }
           }
+          if ( result.length > 100 ) break;  // Sanity check...
         }
-        if ( result.length > 100 ) break;  // Sanity check...
+      } catch(error) {
+        console.log(error)
       }
-    } catch(error) {
-      console.log(error)
+      // Convert result to binary to send to the watch
+      result.sort()
+      entry_count = Math.min(32, result.length)
+      const buffer = new ArrayBuffer(entry_count * 8)
+      const data = new BigUint64Array(buffer)
+      var idx = 0
+      for ( const code of result ) {
+        data[idx++] = BigInt(code)
+        if ( idx >= entry_count ) break;  // Max for the watch, limited after sorting.
+      }
+      Pebble.sendAppMessage({Entries: Array.from(new Uint8Array(buffer))});
+    } else {
+      console.log("Request failed: {0}: {1}".f(req.status, req.statusText));
     }
-    // Convert result to binary to send to the watch
-    result.sort()
-    entry_count = Math.min(32, result.length)
-    const buffer = new ArrayBuffer(entry_count * 8)
-    const data = new BigUint64Array(buffer)
-    var idx = 0
-    for ( const code of result ) {
-      data[idx++] = BigInt(code)
-      if ( idx >= entry_count ) break;  // Max for the watch, limited after sorting.
-    }
-    Pebble.sendAppMessage({Entries: Array.from(new Uint8Array(buffer))});
-  } else {
-    console.log("Request failed: {0}: {1}".f(req.status, req.statusText));
+  } catch(error) {
+    console.log("Error:");
+    console.log(error);
   }
 }
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log(e.type);
-  console.log(e.payload[keys.RequestData]);
-  requestData(e.payload[keys.RequestData]);
+  requestData();
 });

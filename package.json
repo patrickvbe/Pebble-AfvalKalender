@@ -2,9 +2,14 @@
   "name": "AfvalKalender",
   "author": "Patrick van Beem <patrick@vanbeem.info>",
   "version": "0.8.0",
-  "keywords": ["AfvalKalender", "Avri"],
+  "keywords": [
+    "AfvalKalender",
+    "Avri"
+  ],
   "private": true,
-  "dependencies": {},
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
   "pebble": {
     "displayName": "Afval Kalender",
     "uuid": "0d215356-a868-4aa1-a384-db16ffbe091c",
@@ -15,8 +20,7 @@
       "basalt",
       "chalk",
       "diorite",
-      "emery",
-      "flint"
+      "emery"
     ],
     "watchapp": {
       "watchface": false
@@ -25,7 +29,8 @@
       "JSReady",
       "RequestData",
       "Entries",
-      "HouseLetter",
+      "PostalCode",
+      "HouseNumber",
       "HouseLetter",
       "CompanyCode",
       "Community",

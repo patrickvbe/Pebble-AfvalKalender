@@ -19,11 +19,12 @@
 var keys = require('message_keys');
 
 // Import the Clay package for the configuration page
-//var Clay = require('pebble-clay');
+var Clay = require('pebble-clay');
 // Load our Clay configuration file
-//var clayConfig = require('./config');
+var clayConfig = require('./config');
 // Initialize Clay
-//var clay = new Clay(clayConfig);
+var customClay = require('./custom-clay');
+var clay = new Clay(clayConfig, customClay);
 
 
 Pebble.addEventListener('ready', function() {

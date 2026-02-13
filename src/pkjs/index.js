@@ -46,44 +46,12 @@ String.prototype.format = String.prototype.f = function() {
 var community=""
 var uniqueAddressID=""
 
-function FetchAddress(postCode, houseNumber, houseLetter, companyCode) {
-  var req = new XMLHttpRequest();
-  
-  req.open('POST', 'https://wasteapi.ximmio.com/api/FetchAdress' , false)
-  req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
-  req.send('postCode={0}&houseNumber={1}&houseLetter={2}&companyCode={3}'.f(postCode, houseNumber, houseLetter, companyCode))
-  // console.log(req.status)
-  // console.log(req.responseText)
-  if (req.status === 200) {
-    try {
-      var response = JSON.parse(req.responseText)
-      var datalist = response.dataList[0]
-      if ( datalist ) {
-        uniqueAddressID = datalist.UniqueId
-        community = datalist.Community
-      }
-    } catch(error) {
-      //console.log(error)
-    }
-  }
-}
-
-
-function requestData() {
+function requestData(community, uniqueAddressID, companyCode) {
   try {
     console.log('requestData')
-    var postCode="5301PA"
-    var houseNumber="9"
-    var houseLetter=""
-    var companyCode="78cd4156-394b-413d-8936-d407e334559a"
     var startDate= new Date()
     var endDate= new Date()
     endDate.setMonth(endDate.getMonth() + 3) // Get 3 months of data.
-
-    if ( community === "" || uniqueAddressID == "" ) {
-      FetchAddress(postCode, houseNumber, houseLetter, companyCode)
-      console.log("Address fetched: {0} / {1}".f(community, uniqueAddressID));
-    }
 
     var req = new XMLHttpRequest();
     req.open('POST', 'https://wasteapi.ximmio.com/api/GetCalendar' , false)
@@ -134,5 +102,5 @@ function requestData() {
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log(e.type);
-  requestData();
+  requestData(e.payload[keys.Community], e.payload[keys.UniqueAddressID], e.payload[keys.CompanyCode]);
 });

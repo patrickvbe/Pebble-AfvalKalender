@@ -23,15 +23,15 @@ module.exports = [
       },
       {
         "type": "input",
-        "messageKey": "HouseNumber",
         "id": "HouseNumber",
+        "messageKey": "HouseNumber",
         "label": "Huisnummer",
         "defaultValue": "100"
       },
       {
         "type": "input",
-        "messageKey": "HouseLetter",
         "id": "HouseLetter",
+        "messageKey": "HouseLetter",
         "label": "Nummer toevoeging",
         "defaultValue": ""
       },
@@ -39,6 +39,16 @@ module.exports = [
         "type": "button",
         "id": "check",
         "defaultValue": "Adres controleren",
+      },
+      {
+        "type": "text",
+        "id": "statusOK",
+        "defaultValue": "Adres OK",
+      },
+      {
+        "type": "text",
+        "id": "statusFailed",
+        "defaultValue": "Fout bij adres controle",
       },
       {
         "type": "input",
@@ -51,6 +61,12 @@ module.exports = [
         "id": "UniqueAddressID",
         "messageKey": "UniqueAddressID",
         "label": "UniqueAddressID",
+      },
+      {
+        "type": "input",
+        "id": "CompanyCode",
+        "messageKey": "CompanyCode",
+        "label": "CompanyCode",
       }
     ]
   },

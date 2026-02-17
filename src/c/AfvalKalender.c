@@ -39,13 +39,11 @@ const char* const s_entry_types[] = {"Grijs", "Groen", "Papier", "Verpakkingen"}
 #define STORAGE_KEY_ENTRIES      0
 #define STORAGE_KEY_SETTINGS     1
 
-static Window *s_window;
-static MenuLayer *s_menu_layer;
-
-AppTimer* request_entries_timer = NULL;
+static Window *s_window = NULL;
+static MenuLayer *s_menu_layer = NULL;
+static StatusBarLayer* s_status_bar_layer = NULL;
 
 void request_entries() {
-  request_entries_timer = NULL;
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Request entries");
   DictionaryIterator *out_iter;
   AppMessageResult result = app_message_outbox_begin(&out_iter);
@@ -61,13 +59,6 @@ void request_entries() {
   } else {
     // The outbox cannot be used right now
     APP_LOG(APP_LOG_LEVEL_ERROR, "Error preparing the outbox: %d", (int)result);
-  }
-}
-
-void schedule_request_entries() {
-  // Combine multiple request within a short amount of time into one request.
-  if ( request_entries_timer == NULL ) {
-    request_entries_timer = app_timer_register(3000, request_entries, NULL);
   }
 }
 
@@ -87,41 +78,37 @@ void update_entries_received(Tuple* tuple) {
 static void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple* tp = dict_read_first(iter);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Inbox received %ld", tp->key);
+  bool do_request_entries = false;
   Tuple *tuple = dict_find(iter, MESSAGE_KEY_JSReady);
   if(tuple) {
     // PebbleKit JS is ready! Safe to send messages
     APP_LOG(APP_LOG_LEVEL_DEBUG, "JSReady received");
-    schedule_request_entries();
-    return;
+    do_request_entries = true;
   }
   tuple = dict_find(iter, MESSAGE_KEY_Entries);
   if(tuple) {
     update_entries_received(tuple);
-    return;
   }
   tuple = dict_find(iter, MESSAGE_KEY_Community);
   if(tuple) {
     memcpy(s_settings.community, tuple->value->cstring, MIN(tuple->length, MAX_CONFIG_STR_SIZE));
     s_settings.community[MAX_CONFIG_STR_SIZE-1] = 0;
-    //schedule_request_entries();
-    s_settings_changed = true;
-    return;
+    do_request_entries = s_settings_changed = true;
   }
   tuple = dict_find(iter, MESSAGE_KEY_UniqueAddressID);
   if(tuple) {
     memcpy(s_settings.unique_address_id, tuple->value->cstring, MIN(tuple->length, MAX_CONFIG_STR_SIZE));
     s_settings.unique_address_id[MAX_CONFIG_STR_SIZE-1] = 0;
-    //schedule_request_entries();
-    s_settings_changed = true;
-    return;
+    do_request_entries = s_settings_changed = true;
   }
   tuple = dict_find(iter, MESSAGE_KEY_CompanyCode);
   if(tuple) {
     memcpy(s_settings.company_code, tuple->value->cstring, MIN(tuple->length, MAX_CONFIG_STR_SIZE));
     s_settings.company_code[MAX_CONFIG_STR_SIZE-1] = 0;
-    //schedule_request_entries();
-    s_settings_changed = true;
-    return;
+    do_request_entries = s_settings_changed = true;
+  }
+  if ( do_request_entries ) {
+    request_entries();
   }
 }
 
@@ -164,6 +151,11 @@ static void prv_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(window_layer);
 
+  s_status_bar_layer = status_bar_layer_create();
+  layer_add_child(window_layer, status_bar_layer_get_layer(s_status_bar_layer));
+
+  bounds.origin.y += STATUS_BAR_LAYER_HEIGHT;
+  bounds.size.h -= STATUS_BAR_LAYER_HEIGHT;
   s_menu_layer = menu_layer_create(bounds);
   menu_layer_set_click_config_onto_window(s_menu_layer, window);
   menu_layer_set_callbacks(s_menu_layer, NULL, menu_layer_callbacks);
@@ -172,6 +164,7 @@ static void prv_window_load(Window *window) {
 
 static void prv_window_unload(Window *window) {
   menu_layer_destroy(s_menu_layer);
+  status_bar_layer_destroy(s_status_bar_layer);
 }
 
 static void prv_init(void) {

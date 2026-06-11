@@ -19,6 +19,11 @@
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
+#define MS_IN_MINUTE (SECONDS_PER_MINUTE * 1000)
+#define MS_IN_HOUR (MINUTES_PER_HOUR * MS_IN_MINUTE)
+#define MS_IN_DAY (MS_IN_HOUR * 24)
+#define MS_IN_WEEK (MS_IN_DAY * 7)
+#define SECONDS_IN_WEEK (3600 * 24 * 7)
 
 #define MAX_ENTRIES 32
 uint64_t s_entries[MAX_ENTRIES];
@@ -33,6 +38,9 @@ typedef struct Settings {
 Settings s_settings;
 bool s_settings_changed = false;  // So we know we should save it.
 
+uint32_t s_request_timeout_ms = MS_IN_MINUTE;
+AppTimer* s_request_timer;
+
 const char* const s_entry_types[] = {"Grijs", "Groen", "Papier", "Verpakkingen"};
 
 // Persistency of data, so we don't have to communicate each time we start the app.
@@ -43,8 +51,20 @@ static Window *s_window = NULL;
 static MenuLayer *s_menu_layer = NULL;
 static StatusBarLayer* s_status_bar_layer = NULL;
 
+void request_entries();
+
+void request_timedout(void* data) {
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Timeout!");
+  s_request_timer = NULL;
+  s_request_timeout_ms = MIN(s_request_timeout_ms * 5, MS_IN_DAY);
+  request_entries();
+}
+
 void request_entries() {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Request entries");
+  if ( s_request_timer ) app_timer_cancel(s_request_timer);
+  s_request_timer = app_timer_register(s_request_timeout_ms, request_timedout, NULL);
+
   DictionaryIterator *out_iter;
   AppMessageResult result = app_message_outbox_begin(&out_iter);
   if(result == APP_MSG_OK) {
@@ -67,15 +87,28 @@ void update_entries_received(Tuple* tuple) {
   const uint16_t buf_size = MIN(tuple->length, sizeof(s_entries));
   s_num_entries = buf_size / sizeof(uint64_t);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Received %d entries.", s_num_entries);
+
+  // Successfully got data?
   if ( s_num_entries > 0 ) {
     memcpy(&s_entries, tuple->value->data, buf_size);
     menu_layer_reload_data(s_menu_layer);
     // Store data for next app start.
     persist_write_data(STORAGE_KEY_ENTRIES, s_entries, buf_size);
+
+    if ( launch_reason() == APP_LAUNCH_WAKEUP ) {
+      // If started automatically, quit now.
+      exit_reason_set(APP_EXIT_ACTION_PERFORMED_SUCCESSFULLY);
+      window_stack_pop_all(false);
+    } else {
+      // Else request again next week (if you don't touch your watch for that long :-) ).
+      if ( s_request_timer ) app_timer_cancel(s_request_timer);
+      s_request_timer = app_timer_register(MS_IN_WEEK, request_timedout, NULL);
+      s_request_timeout_ms = MS_IN_MINUTE / 5;
+    }
   }
 }
 
-static void inbox_received_handler(DictionaryIterator *iter, void *context) {
+void inbox_received_handler(DictionaryIterator *iter, void *context) {
   Tuple* tp = dict_read_first(iter);
   APP_LOG(APP_LOG_LEVEL_DEBUG, "Inbox received %ld", tp->key);
   bool do_request_entries = false;
@@ -116,20 +149,21 @@ uint16_t menu_layer_num_sections(struct MenuLayer *menu_layer, void *callback_co
 {
   return 1;
 }
+
 uint16_t menu_layer_num_rows(struct MenuLayer *menu_layer, uint16_t section_index, void *callback_context)
 {
   return s_num_entries;
 }
 
- void menu_layer_draw_row(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
-   char sub_title[50];
-   uint64_t entry = s_entries[cell_index->row];
-   int entry_type = entry % 100;
-   time_t entry_time = entry / 100;
-   struct tm* entry_time_struct = gmtime(&entry_time);
-   strftime(sub_title, 50, "%a %x", entry_time_struct);
-   menu_cell_basic_draw(ctx, cell_layer, entry_type > 0 && entry_type <= 4 ? s_entry_types[entry_type-1] : NULL, sub_title, NULL);
- }
+void menu_layer_draw_row(GContext* ctx, const Layer *cell_layer, MenuIndex *cell_index, void *callback_context) {
+  char sub_title[50];
+  uint64_t entry = s_entries[cell_index->row];
+  int entry_type = entry % 100;
+  time_t entry_time = entry / 100;
+  struct tm* entry_time_struct = localtime(&entry_time);
+  strftime(sub_title, 50, "%a %x", entry_time_struct);
+  menu_cell_basic_draw(ctx, cell_layer, entry_type > 0 && entry_type <= 4 ? s_entry_types[entry_type-1] : NULL, sub_title, NULL);
+}
 
 MenuLayerCallbacks menu_layer_callbacks = {
   menu_layer_num_sections,  // MenuLayerGetNumberOfSectionsCallback
@@ -173,9 +207,7 @@ static void prv_init(void) {
   s_settings.company_code[0] = 0;
   persist_read_data(STORAGE_KEY_SETTINGS, &s_settings, sizeof(s_settings));
 
-  //uint64_t inits[] = {177007320004, 177085080002, 177093720001, 177102360003, 177188760004, 177206040002, 177327000002, 177335640001, 177344280003, 177370200004, 177447960002, 177551280004, 177568560002, 177577200001, 177585840003, 177689520002, 177732720004};
-  //s_num_entries = sizeof(inits) / sizeof(uint64_t);
-  //memcpy(s_entries, inits, sizeof(inits));
+  // Get existing data from storage.
   if ( persist_exists(STORAGE_KEY_ENTRIES) ) {
     int data_size = MIN(persist_get_size(STORAGE_KEY_ENTRIES), (int)sizeof(s_entries));
     persist_read_data(STORAGE_KEY_ENTRIES, s_entries, data_size);
@@ -204,6 +236,12 @@ static void prv_deinit(void) {
 }
 
 int main(void) {
+  // Wake me up in a week to get the next batch of data. The watch app is not doing anything with that, but
+  // the phone app will add new pins to the timeline.
+  wakeup_cancel_all();
+  time_t wakeup_time = time(NULL) + SECONDS_IN_WEEK;
+  for ( int maxtry = 10; maxtry-- > 0 && wakeup_schedule(wakeup_time,0,true) == E_RANGE; wakeup_time += 60 );
+
   prv_init();
   app_event_loop();
   prv_deinit();

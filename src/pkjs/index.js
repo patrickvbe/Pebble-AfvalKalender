@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// Import the timeline module
+var timeline = require('./timeline');
 
 // Require the keys' numeric values.
 var keys = require('message_keys');
@@ -26,6 +28,10 @@ var clayConfig = require('./config');
 var customClay = require('./custom-clay');
 var clay = new Clay(clayConfig, customClay);
 
+const s_entry_types = ["Onbekende container", "Rest container", "Groene container", "Papier container", "PMD container"];
+
+var new_pins = new Set();
+var active_pins = new Set();
 
 Pebble.addEventListener('ready', function() {
   Pebble.sendAppMessage({JSReady: 1});
@@ -43,21 +49,62 @@ String.prototype.format = String.prototype.f = function() {
     return s;
 };
 
-var community=""
-var uniqueAddressID=""
+function insertPin(pickuptype, date) {
+  pinid = "afval-" + pickuptype + date.toISOString();
+  new_pins.add(pinid)
+  if ( !active_pins.has(pinid) ) {
+    active_pins.add(pinid)
+    date.setHours(8)
+    // Create the pin
+    var pin = {
+      "id": pinid,
+      "time": date.toISOString(),
+      "layout": {
+        "type": "genericPin",
+        "title": s_entry_types[pickuptype],
+        "tinyIcon": "system://images/TIMELINE_CALENDAR"
+      }
+    };
+
+    console.log('Inserting pin: ' + JSON.stringify(pin));
+    timeline.insertUserPin(pin, function(responseText) { 
+      console.log('Result: ' + responseText);
+    });
+  }
+}
+
+function delete_old_pins() {
+  for ( const item of active_pins ) {
+    if ( !new_pins.has(item) ) {
+      console.log("delete pin " + item)
+      timeline.deleteUserPin(item)
+    }
+  }
+  active_pins = new_pins
+  localStorage.setItem("pins", [...active_pins].join(','))
+}
 
 function requestData(community, uniqueAddressID, companyCode) {
+  stored_pins = localStorage.getItem("pins")
+  if ( stored_pins != null ) {
+    active_pins = new Set(stored_pins.split(","))
+    console.log(active_pins.size + " pins read")
+  }
+  console.log("Pins:")
+  console.log([...active_pins].join(','))
   try {
+    first = true;
     console.log('requestData')
     var startDate= new Date()
     var endDate= new Date()
-    endDate.setMonth(endDate.getMonth() + 3) // Get 3 months of data.
+    endDate.setMonth(endDate.getMonth() + 2) // Get 2 months of data.
 
     var req = new XMLHttpRequest();
     req.open('POST', 'https://wasteapi.ximmio.com/api/GetCalendar' , false)
     req.setRequestHeader("Content-Type", "application/x-www-form-urlencoded")
     req.send('startDate={0}&endDate={1}&community={2}&uniqueAddressID={3}&companyCode={4}'.f(startDate.toISOString().substring(0,10), endDate.toISOString().substring(0,10), community, uniqueAddressID, companyCode))
     if (req.status === 200) {
+      new_pins.clear();
       var result = []
       try {
         //console.log(req.responseText)
@@ -73,9 +120,13 @@ function requestData(community, uniqueAddressID, companyCode) {
               // Convert date + type to a decimal encoded uint32
               var date = new Date(datestr)
               result.push(Math.floor(date.getTime()/1000) * 100 + pickuptype)
+              insertPin(pickuptype, date);
             }
           }
           if ( result.length > 100 ) break;  // Sanity check...
+        }
+        if ( new_pins.size > 0 ) {
+          delete_old_pins()
         }
       } catch(error) {
         console.log(error)
@@ -102,5 +153,5 @@ function requestData(community, uniqueAddressID, companyCode) {
 
 Pebble.addEventListener('appmessage', function(e) {
   console.log(e.type);
-  requestData(e.payload[keys.Community], e.payload[keys.UniqueAddressID], e.payload[keys.CompanyCode]);
+  requestData(e.payload.Community, e.payload.UniqueAddressID, e.payload.CompanyCode);
 });
